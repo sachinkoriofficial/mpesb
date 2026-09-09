@@ -5,12 +5,6 @@ on:
     - cron: "*/30 * * * *"
 
   workflow_dispatch:
-    inputs:
-      test_telegram:
-        description: "Send Telegram test message?"
-        required: true
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -22,8 +16,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -34,8 +26,8 @@ jobs:
         run: |
           pip install requests beautifulsoup4
 
-      - name: Test Telegram
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_telegram == true }}
+      - name: Telegram Test
+        if: github.event_name == 'workflow_dispatch'
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
