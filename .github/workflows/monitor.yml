@@ -3,7 +3,6 @@ name: MPESB Website Monitor
 on:
   schedule:
     - cron: "*/30 * * * *"
-
   workflow_dispatch:
 
 permissions:
@@ -23,8 +22,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: |
-          pip install requests beautifulsoup4
+        run: pip install requests beautifulsoup4
 
       - name: Telegram Test
         if: github.event_name == 'workflow_dispatch'
@@ -32,50 +30,19 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
-          python - <<'PY'
-          import os
-          import requests
-
-          token = os.environ["BOT_TOKEN"]
-          chat_id = os.environ["CHAT_ID"]
-
-          message = """✅ MPESB MONITOR CONNECTED!
-
-          🤖 Telegram Bot: @Smpltd_bot
-          🔗 GitHub Actions: Connected
-          🌐 Website Monitor: Ready
-
-          अब ESB website में नया update मिलने पर notification यहाँ आएगा। 🚨"""
-
-          url = f"https://api.telegram.org/bot{token}/sendMessage"
-
-          response = requests.post(
-              url,
-              data={
-                  "chat_id": chat_id,
-                  "text": message
-              },
-              timeout=30
-          )
-
-          response.raise_for_status()
-          print("Telegram test message sent successfully.")
-          PY
+          python -c "import os,requests; r=requests.post(f'https://api.telegram.org/bot{os.environ[\"BOT_TOKEN\"]}/sendMessage',data={'chat_id':os.environ['CHAT_ID'],'text':'✅ MPESB MONITOR CONNECTED!\n\n🤖 Telegram Bot: @Smpltd_bot\n🔗 GitHub Actions: Connected\n🌐 Website Monitor: Ready'},timeout=30); r.raise_for_status()"
 
       - name: Check MPESB website
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: |
-          python monitor.py
+        run: python monitor.py
 
       - name: Save monitoring state
         run: |
           git config user.name "MPESB Monitor Bot"
           git config user.email "actions@github.com"
-
           git add esb_state.json
-
           if git diff --cached --quiet; then
             echo "No state changes to save."
           else
