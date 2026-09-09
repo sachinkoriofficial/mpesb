@@ -41,11 +41,11 @@ jobs:
 
           message = """✅ MPESB MONITOR CONNECTED!
 
-🤖 Telegram Bot: @Smpltd_bot
-🔗 GitHub Actions: Connected
-🌐 Website Monitor: Ready
+          🤖 Telegram Bot: @Smpltd_bot
+          🔗 GitHub Actions: Connected
+          🌐 Website Monitor: Ready
 
-अब ESB website में नया update मिलने पर notification यहाँ आएगा। 🚨"""
+          अब ESB website में नया update मिलने पर notification यहाँ आएगा। 🚨"""
 
           url = f"https://api.telegram.org/bot{token}/sendMessage"
 
