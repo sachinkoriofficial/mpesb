@@ -3,7 +3,14 @@ name: MPESB Website Monitor
 on:
   schedule:
     - cron: "*/30 * * * *"
+
   workflow_dispatch:
+    inputs:
+      test_telegram:
+        description: "Send Telegram test message?"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -14,18 +21,54 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Install dependencies
         run: |
           pip install requests beautifulsoup4
+
+      - name: Test Telegram
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_telegram == true }}
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import os
+          import requests
+
+          token = os.environ["BOT_TOKEN"]
+          chat_id = os.environ["CHAT_ID"]
+
+          message = """✅ MPESB MONITOR CONNECTED!
+
+🤖 Telegram Bot: @Smpltd_bot
+🔗 GitHub Actions: Connected
+🌐 Website Monitor: Ready
+
+अब ESB website में नया update मिलने पर notification यहाँ आएगा। 🚨"""
+
+          url = f"https://api.telegram.org/bot{token}/sendMessage"
+
+          response = requests.post(
+              url,
+              data={
+                  "chat_id": chat_id,
+                  "text": message
+              },
+              timeout=30
+          )
+
+          response.raise_for_status()
+          print("Telegram test message sent successfully.")
+          PY
 
       - name: Check MPESB website
         env:
