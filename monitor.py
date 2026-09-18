@@ -5,6 +5,7 @@ import difflib
 from datetime import datetime
 
 import requests
+import urllib3
 from bs4 import BeautifulSoup
 
 
@@ -17,6 +18,17 @@ STATE_FILE = "esb_state.json"
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
+
+
+# Disable warning for MPESB SSL fallback
+urllib3.disable_warnings(
+    urllib3.exceptions.InsecureRequestWarning
+)
+
+
+# =========================================================
+# HEADERS
+# =========================================================
 
 HEADERS = {
     "User-Agent": (
@@ -35,7 +47,11 @@ HEADERS = {
 # =========================================================
 
 def send_telegram(message):
-    api_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
+    api_url = (
+        f"https://api.telegram.org/bot"
+        f"{BOT_TOKEN}/sendMessage"
+    )
 
     response = requests.post(
         api_url,
@@ -55,36 +71,80 @@ def send_telegram(message):
     result = response.json()
 
     if not result.get("ok"):
-        raise RuntimeError(f"Telegram API error: {result}")
+        raise RuntimeError(
+            f"Telegram API error: {result}"
+        )
 
-    print("Telegram notification sent successfully.")
+    print(
+        "Telegram notification sent successfully."
+    )
 
 
 # =========================================================
-# FETCH WEBSITE
+# FETCH MPESB WEBSITE
 # =========================================================
 
 def fetch_website():
-    """
-    Fetch MPESB homepage with cache-busting.
-    """
 
-    cache_buster = datetime.now().strftime("%Y%m%d%H%M%S%f")
-
-    url = f"{URL}?_monitor={cache_buster}"
-
-    response = requests.get(
-        url,
-        headers=HEADERS,
-        timeout=45,
+    cache_buster = datetime.now().strftime(
+        "%Y%m%d%H%M%S%f"
     )
+
+    url = (
+        f"{URL}?_monitor={cache_buster}"
+    )
+
+    print("Checking MPESB website...")
+    print("URL:", url)
+
+    try:
+
+        # First try normal secure SSL verification
+        response = requests.get(
+            url,
+            headers=HEADERS,
+            timeout=45,
+            verify=True,
+        )
+
+    except requests.exceptions.SSLError as ssl_error:
+
+        print(
+            "Normal SSL verification failed."
+        )
+
+        print(
+            "Retrying with SSL verification disabled..."
+        )
+
+        print(
+            "SSL error:",
+            ssl_error
+        )
+
+        # MPESB server has SSL certificate
+        # verification issue on GitHub runner.
+        response = requests.get(
+            url,
+            headers=HEADERS,
+            timeout=45,
+            verify=False,
+        )
 
     response.raise_for_status()
 
-    print("Website status:", response.status_code)
-    print("Downloaded bytes:", len(response.content))
+    print(
+        "Website status:",
+        response.status_code
+    )
+
+    print(
+        "Downloaded bytes:",
+        len(response.content)
+    )
 
     if len(response.content) < 1000:
+
         raise RuntimeError(
             "Website response is unexpectedly small."
         )
@@ -93,64 +153,89 @@ def fetch_website():
 
 
 # =========================================================
-# NORMALIZE WEBSITE
+# NORMALIZE WEBSITE CONTENT
 # =========================================================
 
 def normalize_html(content):
-    """
-    Convert the website into stable comparable content.
-    """
 
     soup = BeautifulSoup(
         content,
         "html.parser"
     )
 
-    # Remove things that normally do not represent
-    # visible website updates.
+    # Remove non-visible / dynamic code
     for tag in soup([
         "script",
         "style",
         "noscript",
         "svg"
     ]):
+
         tag.decompose()
 
-    # Visible text
+    # -----------------------------------------------------
+    # VISIBLE TEXT
+    # -----------------------------------------------------
+
     text_lines = []
 
     for line in soup.get_text("\n").splitlines():
-        line = " ".join(line.split())
+
+        line = " ".join(
+            line.split()
+        )
 
         if line:
             text_lines.append(line)
 
-    visible_text = "\n".join(text_lines)
+    visible_text = "\n".join(
+        text_lines
+    )
 
-    # Collect ALL links
+    # -----------------------------------------------------
+    # ALL LINKS
+    # -----------------------------------------------------
+
     links = []
 
     for a in soup.find_all("a"):
+
         title = " ".join(
-            a.get_text(" ", strip=True).split()
+            a.get_text(
+                " ",
+                strip=True
+            ).split()
         )
 
-        href = a.get("href", "").strip()
+        href = a.get(
+            "href",
+            ""
+        ).strip()
 
         if href:
+
             links.append(
                 f"{title} | {href}"
             )
 
-    links = sorted(set(links))
+    # Remove duplicate links
+    links = sorted(
+        set(links)
+    )
 
-    link_text = "\n".join(links)
+    link_text = "\n".join(
+        links
+    )
 
-    # Combine everything important
+    # -----------------------------------------------------
+    # FINAL COMPARABLE CONTENT
+    # -----------------------------------------------------
+
     comparable_content = (
         "VISIBLE TEXT\n"
         + visible_text
-        + "\n\nLINKS\n"
+        + "\n\n"
+        + "LINKS\n"
         + link_text
     )
 
@@ -162,6 +247,7 @@ def normalize_html(content):
 # =========================================================
 
 def make_hash(content):
+
     return hashlib.sha256(
         content.encode(
             "utf-8",
@@ -171,15 +257,19 @@ def make_hash(content):
 
 
 # =========================================================
-# LOAD PREVIOUS STATE
+# LOAD OLD STATE
 # =========================================================
 
 def load_state():
 
-    if not os.path.exists(STATE_FILE):
+    if not os.path.exists(
+        STATE_FILE
+    ):
+
         return None
 
     try:
+
         with open(
             STATE_FILE,
             "r",
@@ -188,9 +278,13 @@ def load_state():
 
             return json.load(f)
 
-    except Exception as e:
+    except Exception as error:
 
-        print("State read error:", e)
+        print(
+            "State file read error:",
+            error
+        )
+
         return None
 
 
@@ -220,17 +314,27 @@ def save_state(content):
             indent=2
         )
 
-    print("Monitoring state saved.")
+    print(
+        "Monitoring state saved."
+    )
 
 
 # =========================================================
 # FIND CHANGES
 # =========================================================
 
-def find_changes(old_content, new_content):
+def find_changes(
+    old_content,
+    new_content
+):
 
-    old_lines = old_content.splitlines()
-    new_lines = new_content.splitlines()
+    old_lines = (
+        old_content.splitlines()
+    )
+
+    new_lines = (
+        new_content.splitlines()
+    )
 
     diff = difflib.unified_diff(
         old_lines,
@@ -252,16 +356,22 @@ def find_changes(old_content, new_content):
             continue
 
         if line.startswith("+"):
+
             value = line[1:].strip()
 
             if value:
-                added.append(value)
+                added.append(
+                    value
+                )
 
         elif line.startswith("-"):
+
             value = line[1:].strip()
 
             if value:
-                removed.append(value)
+                removed.append(
+                    value
+                )
 
     return added, removed
 
@@ -277,35 +387,62 @@ def create_notification(
 
     message = (
         "🚨 MPESB WEBSITE UPDATE!\n\n"
-        "🌐 MPESB Homepage पर नया बदलाव मिला है।\n\n"
+        "🌐 MPESB Homepage पर नया "
+        "बदलाव मिला है।\n\n"
     )
+
+    # -----------------------------------------------------
+    # NEW / UPDATED CONTENT
+    # -----------------------------------------------------
 
     if added:
 
-        message += "🆕 NEW / UPDATED:\n"
+        message += (
+            "🆕 NEW / UPDATED:\n"
+        )
 
         for item in added[:20]:
-            message += f"• {item}\n"
+
+            message += (
+                f"• {item}\n"
+            )
 
         message += "\n"
+
+    # -----------------------------------------------------
+    # REMOVED / CHANGED CONTENT
+    # -----------------------------------------------------
 
     if removed:
 
-        message += "❌ REMOVED / CHANGED:\n"
+        message += (
+            "❌ REMOVED / CHANGED:\n"
+        )
 
         for item in removed[:10]:
-            message += f"• {item}\n"
+
+            message += (
+                f"• {item}\n"
+            )
 
         message += "\n"
+
+    # -----------------------------------------------------
+    # WEBSITE LINK
+    # -----------------------------------------------------
 
     message += (
         "🔗 MPESB Homepage:\n"
         "https://esb.mp.gov.in/e_default.html"
     )
 
-    # Telegram message limit safety
+    # Telegram message safety limit
     if len(message) > 3900:
-        message = message[:3900] + "\n..."
+
+        message = (
+            message[:3900]
+            + "\n..."
+        )
 
     return message
 
@@ -317,46 +454,90 @@ def create_notification(
 def main():
 
     print("=" * 60)
-    print("MPESB HOMEPAGE MONITOR STARTED")
+
+    print(
+        "MPESB HOMEPAGE MONITOR STARTED"
+    )
+
     print("=" * 60)
 
-    # Fetch latest website
+    # -----------------------------------------------------
+    # FETCH WEBSITE
+    # -----------------------------------------------------
+
     raw_content = fetch_website()
 
-    # Convert to comparable content
-    new_content = normalize_html(raw_content)
+    # -----------------------------------------------------
+    # NORMALIZE
+    # -----------------------------------------------------
+
+    new_content = normalize_html(
+        raw_content
+    )
 
     if not new_content.strip():
+
         raise RuntimeError(
             "No usable website content was found."
         )
 
-    new_hash = make_hash(new_content)
+    # -----------------------------------------------------
+    # NEW HASH
+    # -----------------------------------------------------
 
-    print("New website hash:", new_hash)
+    new_hash = make_hash(
+        new_content
+    )
 
-    # Load old snapshot
+    print(
+        "New website hash:",
+        new_hash
+    )
+
+    # -----------------------------------------------------
+    # LOAD OLD STATE
+    # -----------------------------------------------------
+
     old_state = load_state()
 
-    # First run
+    # =====================================================
+    # FIRST RUN
+    # =====================================================
+
     if old_state is None:
 
         print(
             "No previous snapshot found."
         )
 
-        save_state(new_content)
+        save_state(
+            new_content
+        )
 
         print(
-            "First snapshot created. "
-            "No Telegram notification."
+            "First snapshot created."
+        )
+
+        print(
+            "No Telegram notification "
+            "on first run."
         )
 
         return
 
-    old_hash = old_state.get("hash", "")
+    # -----------------------------------------------------
+    # OLD HASH
+    # -----------------------------------------------------
 
-    print("Old website hash:", old_hash)
+    old_hash = old_state.get(
+        "hash",
+        ""
+    )
+
+    print(
+        "Old website hash:",
+        old_hash
+    )
 
     # =====================================================
     # NO CHANGE
@@ -368,8 +549,9 @@ def main():
             "✅ No website change detected."
         )
 
-        # Keep state fresh
-        save_state(new_content)
+        save_state(
+            new_content
+        )
 
         return
 
@@ -386,6 +568,10 @@ def main():
         ""
     )
 
+    # -----------------------------------------------------
+    # FIND EXACT CHANGES
+    # -----------------------------------------------------
+
     added, removed = find_changes(
         old_content,
         new_content
@@ -401,20 +587,42 @@ def main():
         len(removed)
     )
 
-    # Create notification
+    # -----------------------------------------------------
+    # CREATE MESSAGE
+    # -----------------------------------------------------
+
     message = create_notification(
         added,
         removed
     )
 
-    # IMPORTANT:
-    # Send Telegram BEFORE saving new state.
-    # If Telegram fails, GitHub Action fails and
-    # the old state remains available for retry.
-    send_telegram(message)
+    print(
+        "\nTelegram message:"
+    )
 
-    # Save new state only after Telegram succeeds
-    save_state(new_content)
+    print(
+        message
+    )
+
+    # =====================================================
+    # SEND TELEGRAM FIRST
+    # =====================================================
+
+    # IMPORTANT:
+    # New state will NOT be saved until Telegram
+    # successfully sends the notification.
+
+    send_telegram(
+        message
+    )
+
+    # =====================================================
+    # SAVE NEW STATE
+    # =====================================================
+
+    save_state(
+        new_content
+    )
 
     print(
         "✅ Update processed successfully."
@@ -426,4 +634,5 @@ def main():
 # =========================================================
 
 if __name__ == "__main__":
+
     main()
